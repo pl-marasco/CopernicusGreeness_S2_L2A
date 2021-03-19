@@ -90,19 +90,16 @@ def _hsv(mir, nir, red):
                      coords={'time': mir.time, 'y': mir.y, 'x': mir.x})
 
     H = H.where(H != 0, np.NAN) * 360.
-    H.name = 'H'
 
     S = xr.DataArray(S,
                      dims=['time', 'y', 'x'],
                      coords={'time': mir.time, 'y': mir.y, 'x': mir.x})
-    S.name = 'S'
 
     V = xr.DataArray(V,
                      dims=['time', 'y', 'x'],
                      coords={'time': mir.time, 'y': mir.y, 'x': mir.x})
-    V.name = 'V'
 
-    HSV = xr.Dataset({'HSV_d': H, 'S': S, 'V': V})
+    HSV = xr.Dataset({'H': H, 'S': S, 'V': V})
 
     return HSV
 
@@ -110,10 +107,8 @@ def _hsv(mir, nir, red):
 def _gvi(combined, **parameters):
 
     limits = parameters.pop('limits', '')
-    algorithm = parameters.pop('algorithm', '')
 
-    VI, H = combined
-    V_INDEX = getattr(VI, algorithm)   #TODO Modifica qui
+    V_INDEX, H = combined
 
     null_mask = np.logical_or(V_INDEX.isnull(), H.isnull())
 
@@ -142,6 +137,11 @@ if __name__ == '__main__':
     evi = _evi(ds_masked.B02, ds_masked.B04, ds_masked.B8A)
     hsv = _hsv(ds_masked.B11, ds_masked.B8A, ds_masked.B04)
 
-    combined = zip(hsv, evi)
+    if alg == 'EVI':
+        combined = [evi, hsv.H]
+    elif alg == 'NDVI':
+        combined = [ndvi, hsv.H]
 
-    _gvi(combined, **{'limits': limits, 'algorithm': alg})
+    gvi_ = _gvi(combined, **{'limits': limits})
+
+    pass
