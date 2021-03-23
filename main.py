@@ -1,10 +1,57 @@
 import numpy as np
 import xarray as xr
 import rioxarray as riox
+from rioxarray.merge import merge_arrays
 import os
 import pandas as pd
 from skimage.color import rgb2hsv
 import yaml
+import matplotlib.pyplot as plt
+import datetime
+import glob
+
+
+def _folder_walker(scene_path):
+    orbits = ['006', '020', '035', '049', '063', '078', '092', '106', '135']
+
+    Q = [str(i) + 'Q' for i in range(37, 40)]
+    P = [str(i) + 'P' for i in range(36, 40)]
+    N = [str(i) + 'N' for i in range(36, 40)]
+    M = [str(i) + 'M' for i in range(36, 39)]
+
+    zones = []
+    for i in (Q, P, N, M):
+        zones.extend(i)
+
+    path = os.path.normpath(scene_path)
+    tiles = []
+
+    datelist = pd.date_range(end=datetime.datetime.today(), periods=120, freq='D').tolist()
+
+    for obs_date in datelist:
+        print(rf'Observation date:{obs_date.date()}')
+        year = str(obs_date.year)
+        month = str(obs_date.month).zfill(2)
+        day = str(obs_date.day).zfill(2)
+
+        path_date = os.path.join(path, year, month, day)
+
+        tile_date = []
+        if os.path.isdir(path_date):
+            for orbit in orbits:
+
+                path_orbit = os.path.join(path_date, orbit)
+
+                if os.path.isdir(path_orbit):
+                    for folder in os.listdir(path_orbit):
+                        if folder[39:42] in zones:
+                            path_granule = os.path.join(path_orbit, folder, 'GRANULE')
+                            for observation in os.listdir(path_granule):
+                                bands_path = os.path.join(path_granule, observation, 'IMG_data', 'R20m')
+                                tile_date.append(bands_path)
+            tiles.append(tile_date)
+
+    return tiles
 
 
 def _threshold(path):
@@ -14,14 +61,14 @@ def _threshold(path):
     return parameters[0]
 
 
-def _loader(path, chunks=(1, 2783, 2783)):
+def _loader(path, ):
 
     path = os.path.normpath(path)
     filename = path.split(os.sep)[-1]
     date = pd.to_datetime(filename[7:15])
     band = filename[23:26]
 
-    da = riox.open_rasterio(path, chunks=chunks)
+    da = riox.open_rasterio(path)  # TODO add chunks
 
     da = da.assign_coords({'time': ('band', [date, ])})
     da = da.swap_dims({'band': 'time'})
@@ -129,19 +176,34 @@ if __name__ == '__main__':
     parameters = 'parameters.yaml'
     limits = _threshold(parameters)
 
-    ds = _composer(r'L:\HSL\observations\S2\scenes\2021\02\15\063\S2A_MSIL2A_20210215T065951_N0214_R063_T38NRL_20210215T100540.SAFE\GRANULE\L2A_T38NRL_A029518_20210215T070108\IMG_DATA\R20m')
-    mask = _quality_mask(ds)
-    ds_masked = ds.where(mask)
+    tiles_pth = _folder_walker(r'L:\HSL\observations\S2\scenes')
 
-    ndvi = _ndvi(ds_masked.B04, ds_masked.B8A)
-    evi = _evi(ds_masked.B02, ds_masked.B04, ds_masked.B8A)
-    hsv = _hsv(ds_masked.B11, ds_masked.B8A, ds_masked.B04)
+    dates = []
 
-    if alg == 'EVI':
-        combined = [evi, hsv.H]
-    elif alg == 'NDVI':
-        combined = [ndvi, hsv.H]
+    for tiles_agg_date in tiles_pth:
+        tiles = []
+        for sng_date_tile in tiles_agg_date:
+            ds = _composer(sng_date_tile)
+            mask = _quality_mask(ds)
+            ds_masked = ds.where(mask)
 
-    gvi_ = _gvi(combined, **{'limits': limits})
+            ndvi = _ndvi(ds_masked.B04, ds_masked.B8A)
+            evi = _evi(ds_masked.B02, ds_masked.B04, ds_masked.B8A)
+            hsv = _hsv(ds_masked.B11, ds_masked.B8A, ds_masked.B04)
 
+            if alg == 'EVI':
+                combined = [evi, hsv.H]
+            elif alg == 'NDVI':
+                combined = [ndvi, hsv.H]
+
+            gvi_ = _gvi(combined, **{'limits': limits})
+
+            gvi_reproj = gvi_.rio.reproject('EPSG:4326')
+            gvi_ready = gvi_reproj.where(gvi_reproj != -9999)
+
+            tiles.append(gvi_ready)
+
+        dates.append(merge_arrays(tiles, method='max'))
+
+    test = xr.concat(dates, dim='time')
     pass
