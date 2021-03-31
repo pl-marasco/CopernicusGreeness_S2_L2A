@@ -8,7 +8,6 @@ from skimage.color import rgb2hsv
 import yaml
 import matplotlib.pyplot as plt
 import datetime
-import glob
 from distributed import Client, progress
 from numba import njit
 
@@ -48,7 +47,7 @@ def _folder_walker(scene_path):
 
         # tile_date = []
         if os.path.isdir(path_date):
-            dic_zones = {zn: [] for zn in zones}
+            dic_zones = {zn: [] for zn in range(36, 40)}
             for orbit in orbits:
 
                 path_orbit = os.path.join(path_date, orbit)
@@ -61,9 +60,9 @@ def _folder_walker(scene_path):
                             path_granule = os.path.join(path_orbit, folder, 'GRANULE')
                             for observation in os.listdir(path_granule):
                                 bands_path = os.path.join(path_granule, observation, 'IMG_data', 'R20m')
-                                upd_lst_int = dic_zones.get(zone)
+                                upd_lst_int = dic_zones.get(int(zone[0:2]))
                                 upd_lst_int.append(bands_path)
-                                dic_zones.update({zone: upd_lst_int})
+                                dic_zones.update({int(zone[0:2]): upd_lst_int})
                                 # tile_date.append(bands_path)
             # tiles.append(tile_date)
             tiles.append(list(filter(None, dic_zones.values())))
